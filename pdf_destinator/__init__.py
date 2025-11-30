@@ -1,7 +1,7 @@
 """PDF Destinator - Add named destinations and links to PDFs without expensive tools."""
 
-__version__ = "0.1.0"
-__author__ = "Claude and friends"
+__version__ = "0.1.1"
+__author__ = "Claude & friends"
 
 from .picker import PDFDestinationPicker, main
 
