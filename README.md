@@ -23,15 +23,17 @@ pip install pdf-destinator
 ### System Requirements
 
 - Python 3.8+
-- tkinter (usually included with Python)
+- tkinter (GUI toolkit)
 
-On Linux, you may need to install tkinter separately:
+**Windows:** tkinter is included with the standard Python installer - no extra steps needed.
+
+**Linux:** Install tkinter separately:
 ```bash
 sudo apt-get install python3-tk  # Debian/Ubuntu
 sudo dnf install python3-tkinter  # Fedora
 ```
 
-On macOS:
+**macOS:** Included with python.org installer. If using Homebrew Python:
 ```bash
 brew install python-tk
 ```
