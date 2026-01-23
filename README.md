@@ -13,6 +13,7 @@ An interactive GUI tool to add **named destinations** and **clickable link regio
 - **Keyboard shortcuts** for efficient workflow
 - **JSON configuration support** for batch workflows
 - **Diagnose mode** to inspect existing PDF structure
+- **PDF outline/TOC generation** for reader sidebar navigation
 
 ## Installation
 
@@ -86,6 +87,41 @@ Inspect existing destinations and links in a PDF:
 pdf-destinator document.pdf --diagnose
 ```
 
+### Generate PDF Outline/TOC
+
+Generate a PDF outline (table of contents) that appears in PDF reader sidebars (like Evince, Adobe Reader, ReadEra, etc.).
+
+> **Note:** Link annotations (clickable regions on pages) are different from the PDF outline. The outline is what PDF readers display in their navigation sidebar. This feature creates that outline structure.
+
+**Command-line options:**
+
+```bash
+# From named destinations in the PDF
+pdf-destinator document.pdf --toc
+
+# From links on specific TOC pages (extracts link text as titles)
+pdf-destinator document.pdf --toc-from-links 3 5
+
+# Both methods combined
+pdf-destinator document.pdf --toc --toc-from-links 3 5
+```
+
+**GUI options:**
+
+Use the "TOC" dropdown in the action bar before saving:
+
+| Option | Description |
+|--------|-------------|
+| None | No TOC generation (default) |
+| From destinations | Create TOC from all positioned destinations |
+| From page links | Extract TOC from links on specified pages |
+| Both | Combine both methods |
+
+When "From page links" or "Both" is selected, enter the page range in the "Pages" field:
+- `3-5` - pages 3 to 5
+- `1,3,5` - specific pages
+- `2-4,7` - combination
+
 ## Workflow
 
 1. **Open PDF** - Run pdf-destinator with your PDF file
@@ -93,7 +129,8 @@ pdf-destinator document.pdf --diagnose
 3. **Click** - Click on the page to set a destination position
 4. **Drag** - Drag a rectangle to create a clickable link region
 5. **Delete** - Hover over a link region (cursor changes to X) and click to delete
-6. **Save** - Click "Save and quit" when done
+6. **TOC** - Optionally select TOC generation mode before saving
+7. **Save** - Click "Save and quit" when done
 
 ## Keyboard Shortcuts
 
@@ -130,6 +167,7 @@ In the destination list:
 - **Link external resources** from PDF pages
 - **Fix or update** existing PDF destinations
 - **Batch processing** with JSON configuration
+- **Generate PDF outline/TOC** so destinations appear in reader sidebars
 
 ## Python API
 

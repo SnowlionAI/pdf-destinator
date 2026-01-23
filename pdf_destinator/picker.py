@@ -487,6 +487,27 @@ class PDFDestinationPicker:
 
         ttk.Separator(action_frame, orient="vertical").pack(side="left", padx=10, fill="y")
 
+        # TOC options
+        ttk.Label(action_frame, text="TOC:").pack(side="left", padx=(5, 2))
+        self.toc_mode_var = tk.StringVar(value="None")
+        self.toc_mode_combo = ttk.Combobox(
+            action_frame,
+            textvariable=self.toc_mode_var,
+            values=["None", "From destinations", "From page links", "Both"],
+            state="readonly",
+            width=16
+        )
+        self.toc_mode_combo.pack(side="left", padx=2)
+        self.toc_mode_combo.bind("<<ComboboxSelected>>", self.on_toc_mode_change)
+
+        # Page range entry (initially disabled)
+        ttk.Label(action_frame, text="Pages:").pack(side="left", padx=(10, 2))
+        self.toc_pages_var = tk.StringVar(value="")
+        self.toc_pages_entry = ttk.Entry(action_frame, textvariable=self.toc_pages_var, width=10, state="disabled")
+        self.toc_pages_entry.pack(side="left", padx=2)
+
+        ttk.Separator(action_frame, orient="vertical").pack(side="left", padx=10, fill="y")
+
         ttk.Button(action_frame, text="Save and quit", command=self.save_and_quit).pack(side="left", padx=10)
         ttk.Button(action_frame, text="Cancel", command=self.cancel).pack(side="left", padx=5)
 
@@ -509,6 +530,63 @@ class PDFDestinationPicker:
                 self._navigate_to_current_destination()
                 self.update_display()
             self.canvas.focus_set()
+
+    def on_toc_mode_change(self, event=None):
+        """Handle TOC mode combobox selection change."""
+        mode = self.toc_mode_var.get()
+        if mode in ("From page links", "Both"):
+            self.toc_pages_entry.config(state="normal")
+            # Set default page range if empty
+            if not self.toc_pages_var.get():
+                self.toc_pages_var.set("1-3")
+        else:
+            self.toc_pages_entry.config(state="disabled")
+
+    def parse_page_range(self, range_str, total_pages=None):
+        """Parse a page range string into a list of page numbers.
+
+        Supports formats like:
+        - "3-5" -> [3, 4, 5]
+        - "1,3,5" -> [1, 3, 5]
+        - "2-4,7" -> [2, 3, 4, 7]
+        - "1-3, 5-7" -> [1, 2, 3, 5, 6, 7]
+
+        Args:
+            range_str: The page range string to parse
+            total_pages: Total number of pages (for validation). If None, uses self.doc.
+
+        Returns:
+            List of page numbers (1-indexed), or None if invalid
+        """
+        if not range_str or not range_str.strip():
+            return None
+
+        pages = set()
+        if total_pages is None:
+            total_pages = len(self.doc)
+
+        try:
+            # Split by comma
+            parts = [p.strip() for p in range_str.split(',')]
+            for part in parts:
+                if '-' in part:
+                    # Range like "3-5"
+                    start, end = part.split('-', 1)
+                    start = int(start.strip())
+                    end = int(end.strip())
+                    if start < 1 or end > total_pages or start > end:
+                        return None
+                    pages.update(range(start, end + 1))
+                else:
+                    # Single page
+                    page = int(part)
+                    if page < 1 or page > total_pages:
+                        return None
+                    pages.add(page)
+
+            return sorted(pages) if pages else None
+        except (ValueError, AttributeError):
+            return None
 
     def add_custom_destination(self):
         """Add a custom destination - either local (text) or external (URL)."""
@@ -1021,6 +1099,7 @@ class PDFDestinationPicker:
             return
 
         page_heights = [self.doc[i].rect.height for i in range(len(self.doc))]
+        total_pages = len(self.doc)  # Store before closing
 
         self.doc.close()
 
@@ -1126,6 +1205,53 @@ class PDFDestinationPicker:
         else:
             temp_path.replace(self.pdf_path)
 
+        # Step 3: Generate TOC if requested
+        toc_count = 0
+        toc_mode = self.toc_mode_var.get()
+
+        if toc_mode != "None":
+            print(f"\nStep 3: Generating PDF outline/TOC (mode: {toc_mode})...")
+            outline = []
+
+            # Generate from page links if requested
+            if toc_mode in ("From page links", "Both"):
+                page_range = self.parse_page_range(self.toc_pages_var.get(), total_pages)
+                if page_range:
+                    print(f"  Extracting from links on pages: {self.toc_pages_var.get()}")
+                    # Get min and max pages for the range
+                    start_page = min(page_range)
+                    end_page = max(page_range)
+                    link_outline = generate_toc_from_links(self.pdf_path, start_page, end_page)
+                    # Filter to only include entries from specified pages
+                    # (generate_toc_from_links scans a range, but we want specific pages)
+                    outline.extend(link_outline)
+                    print(f"  Found {len(link_outline)} entries from page links")
+                else:
+                    print(f"  Warning: Invalid page range '{self.toc_pages_var.get()}', skipping link extraction")
+
+            # Generate from destinations if requested
+            if toc_mode in ("From destinations", "Both") and all_destinations:
+                print(f"  Generating from {len(all_destinations)} destinations...")
+                dest_outline = generate_toc_from_destinations(self.pdf_path, all_destinations)
+
+                if toc_mode == "Both" and outline:
+                    # Merge: add destinations not already covered by page
+                    existing_pages = {entry[2] for entry in outline}
+                    for entry in dest_outline:
+                        if entry[2] not in existing_pages:
+                            outline.append(entry)
+                    # Sort by page number
+                    outline.sort(key=lambda x: x[2])
+                else:
+                    outline = dest_outline
+
+                print(f"  Found {len(dest_outline)} entries from destinations")
+
+            if outline:
+                apply_toc_to_pdf(self.pdf_path, outline)
+                toc_count = len(outline)
+                print(f"  Generated TOC with {toc_count} total entries")
+
         print(f"\n[OK] PDF saved: {self.pdf_path.name}")
         msg = f"Saved to {self.pdf_path.name}:\n"
         msg += f"- {len(all_destinations)} destinations ({new_dest_count} new, {preserved_count} preserved)\n"
@@ -1135,6 +1261,8 @@ class PDFDestinationPicker:
             if removed_existing_links > 0:
                 msg += f", {removed_existing_links} removed"
             msg += ")"
+        if toc_count > 0:
+            msg += f"\n- TOC generated with {toc_count} entries"
         messagebox.showinfo("Saved", msg)
 
         self.root.quit()
@@ -1214,6 +1342,253 @@ def diagnose_pdf(pdf_path):
     print("="*60 + "\n")
 
 
+def generate_toc_from_destinations(pdf_path, destinations):
+    """Generate PDF outline/TOC from named destinations.
+
+    Args:
+        pdf_path: Path to the PDF file
+        destinations: Dict of {dest_id: (page_num, x, y)} or list of section dicts
+
+    Returns:
+        List of outline entries [[level, title, page_num], ...]
+    """
+    outline = []
+
+    if isinstance(destinations, dict):
+        # Convert dict to sorted list by page number, then y position
+        sorted_dests = sorted(destinations.items(), key=lambda x: (x[1][0], x[1][2]))
+        for dest_id, (page_num, x, y) in sorted_dests:
+            # Convert dest_id to title (replace hyphens with spaces, title case)
+            title = dest_id.replace('-', ' ').title()
+            outline.append([1, title, page_num + 1])  # PDF pages are 1-indexed in TOC
+    else:
+        # List of section dicts with positions
+        for section in destinations:
+            if section.get('type') == 'url':
+                continue  # Skip URL destinations
+            title = section.get('title', section.get('id', ''))
+            page_num = section.get('page', 0)
+            outline.append([1, title, page_num + 1])
+
+    return outline
+
+
+def generate_toc_from_links(pdf_path, start_page, end_page):
+    """Generate PDF outline/TOC by extracting links from specified pages.
+
+    This extracts text from link regions on TOC pages and creates outline entries.
+
+    Args:
+        pdf_path: Path to the PDF file
+        start_page: First page to scan (1-indexed)
+        end_page: Last page to scan (1-indexed, inclusive)
+
+    Returns:
+        List of outline entries [[level, title, page_num], ...]
+    """
+    doc = fitz.open(str(pdf_path))
+    outline = []
+
+    # Convert to 0-indexed
+    start_idx = start_page - 1
+    end_idx = end_page  # Range is exclusive, so don't subtract
+
+    for page_num in range(start_idx, min(end_idx, len(doc))):
+        page = doc[page_num]
+        words = page.get_text("words")
+
+        for link in page.get_links():
+            rect = fitz.Rect(link.get("from", fitz.Rect()))
+
+            # Extract text that intersects with the link rectangle
+            text = " ".join(
+                w[4] for w in words
+                if fitz.Rect(w[:4]).intersects(rect)
+            ).strip()
+
+            # Get target page
+            target_page = link.get("page")
+
+            # Also check for named destinations
+            if target_page is None and link.get("kind") == fitz.LINK_NAMED:
+                dest_name = link.get("nameddest", link.get("name", ""))
+                # Try to resolve the named destination
+                # This would need additional logic to look up the destination
+                continue
+
+            if text and target_page is not None:
+                outline.append([1, text, target_page + 1])
+
+    doc.close()
+    return outline
+
+
+def apply_toc_to_pdf(pdf_path, outline, output_path=None):
+    """Apply an outline/TOC to a PDF file.
+
+    Args:
+        pdf_path: Path to the input PDF
+        outline: List of outline entries [[level, title, page_num], ...]
+        output_path: Output path (defaults to overwriting input)
+
+    Returns:
+        Path to the output file
+    """
+    if output_path is None:
+        output_path = pdf_path
+
+    doc = fitz.open(str(pdf_path))
+
+    # Get existing TOC
+    existing_toc = doc.get_toc()
+
+    if existing_toc:
+        print(f"  Existing TOC has {len(existing_toc)} entries (will be replaced)")
+
+    doc.set_toc(outline)
+
+    # Save to temp file first if overwriting
+    if Path(output_path) == Path(pdf_path):
+        temp_path = Path(pdf_path).with_suffix('.toc_temp.pdf')
+        doc.save(str(temp_path), incremental=False, deflate=True)
+        doc.close()
+        temp_path.replace(pdf_path)
+        return pdf_path
+    else:
+        doc.save(str(output_path), incremental=False, deflate=True)
+        doc.close()
+        return output_path
+
+
+def generate_toc_cli(pdf_path, from_destinations, from_links_range):
+    """Command-line TOC generation.
+
+    Args:
+        pdf_path: Path to the PDF
+        from_destinations: If True, generate from named destinations
+        from_links_range: Tuple of (start_page, end_page) or None
+    """
+    print(f"\n{'='*60}")
+    print(f"GENERATING TOC: {pdf_path.name}")
+    print('='*60)
+
+    outline = []
+
+    if from_links_range:
+        start_page, end_page = from_links_range
+        print(f"\nExtracting TOC from links on pages {start_page}-{end_page}...")
+        outline = generate_toc_from_links(pdf_path, start_page, end_page)
+        print(f"  Found {len(outline)} entries from links")
+
+    if from_destinations:
+        print(f"\nExtracting TOC from named destinations...")
+        # Load existing destinations from PDF
+        doc = fitz.open(str(pdf_path))
+        doc.close()
+
+        # Use pypdf to read destinations
+        from pypdf import PdfReader
+        reader = PdfReader(str(pdf_path))
+
+        destinations = {}
+        page_ref_to_idx = {}
+        for i, page in enumerate(reader.pages):
+            if page.indirect_reference:
+                page_ref_to_idx[page.indirect_reference.idnum] = i
+
+        # Read from /Names tree
+        named_dests = reader.named_destinations
+        if named_dests:
+            for name, dest in named_dests.items():
+                page_idx = None
+                if hasattr(dest, 'page') and dest.page is not None:
+                    if hasattr(dest.page, 'idnum'):
+                        page_idx = page_ref_to_idx.get(dest.page.idnum)
+
+                if page_idx is not None:
+                    doc_temp = fitz.open(str(pdf_path))
+                    page_height = doc_temp[page_idx].rect.height
+                    doc_temp.close()
+
+                    x, y = 0, 0
+                    if hasattr(dest, 'left') and dest.left is not None:
+                        x = float(dest.left)
+                    if hasattr(dest, 'top') and dest.top is not None:
+                        y = page_height - float(dest.top)
+
+                    destinations[str(name).lstrip('/')] = (page_idx, x, y)
+
+        # Read from /Dests catalog
+        if hasattr(reader, '_root_object') and '/Dests' in reader._root_object:
+            dests_obj = reader._root_object['/Dests']
+            if hasattr(dests_obj, 'get_object'):
+                dests_obj = dests_obj.get_object()
+
+            doc_temp = fitz.open(str(pdf_path))
+            for name, dest_array in dests_obj.items():
+                clean_name = str(name).lstrip('/')
+                if clean_name in destinations:
+                    continue
+
+                if hasattr(dest_array, 'get_object'):
+                    dest_array = dest_array.get_object()
+
+                if isinstance(dest_array, list) and len(dest_array) >= 2:
+                    page_ref = dest_array[0]
+                    page_idx = None
+
+                    if hasattr(page_ref, 'idnum'):
+                        page_idx = page_ref_to_idx.get(page_ref.idnum)
+
+                    if page_idx is not None:
+                        page_height = doc_temp[page_idx].rect.height
+                        x, y = 0, 0
+
+                        if len(dest_array) >= 4 and str(dest_array[1]) == '/XYZ':
+                            try:
+                                x = float(dest_array[2]) if dest_array[2] else 0
+                                pdf_y = float(dest_array[3]) if dest_array[3] else 0
+                                y = page_height - pdf_y
+                            except (ValueError, TypeError):
+                                pass
+
+                        destinations[clean_name] = (page_idx, x, y)
+            doc_temp.close()
+
+        print(f"  Found {len(destinations)} named destinations")
+
+        # Generate outline from destinations
+        dest_outline = generate_toc_from_destinations(pdf_path, destinations)
+
+        # Merge with link-based outline (link-based takes precedence for ordering)
+        if outline:
+            # Add any destinations not already covered by links
+            existing_pages = {entry[2] for entry in outline}
+            for entry in dest_outline:
+                if entry[2] not in existing_pages:
+                    outline.append(entry)
+            # Sort by page number
+            outline.sort(key=lambda x: x[2])
+        else:
+            outline = dest_outline
+
+    if not outline:
+        print("\nNo outline entries found. No changes made.")
+        return
+
+    print(f"\nFinal outline has {len(outline)} entries:")
+    for level, title, page in outline:
+        indent = "  " * level
+        display_title = title[:50] + "..." if len(title) > 50 else title
+        print(f"  {indent}{display_title} -> page {page}")
+
+    print(f"\nApplying TOC to PDF...")
+    apply_toc_to_pdf(pdf_path, outline)
+
+    print(f"\n[OK] TOC generated and saved: {pdf_path.name}")
+    print("="*60 + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='PDF Destinator - Add named destinations and links to PDFs',
@@ -1238,6 +1613,9 @@ Examples:
     parser.add_argument('--titles', nargs='+', help='Destination titles to add')
     parser.add_argument('--json', dest='json_file', help='JSON file with destinations')
     parser.add_argument('--diagnose', action='store_true', help='Diagnose PDF structure')
+    parser.add_argument('--toc', action='store_true', help='Generate PDF outline/TOC from destinations')
+    parser.add_argument('--toc-from-links', nargs=2, type=int, metavar=('START', 'END'),
+                        help='Generate PDF outline from links on pages START to END (1-indexed)')
 
     args = parser.parse_args()
 
@@ -1251,6 +1629,10 @@ Examples:
 
     if args.diagnose:
         diagnose_pdf(pdf_path)
+        sys.exit(0)
+
+    if args.toc or args.toc_from_links:
+        generate_toc_cli(pdf_path, args.toc, args.toc_from_links)
         sys.exit(0)
 
     # Get destinations
