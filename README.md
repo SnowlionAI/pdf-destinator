@@ -89,7 +89,7 @@ pdf-destinator document.pdf --diagnose
 ## Workflow
 
 1. **Open PDF** - Run pdf-destinator with your PDF file
-2. **Navigate** - Use arrow keys or buttons to browse pages
+2. **Navigate** - Use arrow keys or buttons to browse pages, or click the page indicator to jump to a specific page
 3. **Click** - Click on the page to set a destination position
 4. **Drag** - Drag a rectangle to create a clickable link region
 5. **Delete** - Hover over a link region (cursor changes to X) and click to delete
@@ -102,6 +102,10 @@ pdf-destinator document.pdf --diagnose
 | Left/Right | Navigate pages |
 | Up/Down | Navigate destinations |
 | Mouse wheel | Scroll page (changes pages at boundaries) |
+
+## Page Navigation
+
+Click the page indicator button (e.g., "Page 1 / 10") to open a dialog where you can jump directly to any page number.
 
 ## Mouse Actions
 

@@ -463,8 +463,8 @@ class PDFDestinationPicker:
         nav_frame.grid(row=2, column=0, columnspan=2, pady=10)
 
         ttk.Button(nav_frame, text="< Page", command=self.prev_page).pack(side="left", padx=5)
-        self.page_label = ttk.Label(nav_frame, text="Page 1 / 1")
-        self.page_label.pack(side="left", padx=20)
+        self.page_button = ttk.Button(nav_frame, text="Page 1 / 1", command=self.on_page_button_click, width=12)
+        self.page_button.pack(side="left", padx=20)
         ttk.Button(nav_frame, text="Page >", command=self.next_page).pack(side="left", padx=5)
 
         ttk.Separator(nav_frame, orient="vertical").pack(side="left", padx=20, fill="y")
@@ -668,7 +668,7 @@ class PDFDestinationPicker:
 
         self.update_section_list()
 
-        self.page_label.config(text=f"Page {self.current_page + 1} / {len(self.doc)}")
+        self.page_button.config(text=f"Page {self.current_page + 1} / {len(self.doc)}")
         self.zoom_label.config(text=f"{int(self.zoom * 100)}%")
 
         img, width, height = self.render_page()
@@ -930,6 +930,21 @@ class PDFDestinationPicker:
     def next_page(self):
         if self.current_page < len(self.doc) - 1:
             self.current_page += 1
+            self.update_display()
+
+    def on_page_button_click(self):
+        """Show dialog to jump to a specific page."""
+        total_pages = len(self.doc)
+        page_num = simpledialog.askinteger(
+            "Go to page",
+            f"Enter page number (1-{total_pages}):",
+            parent=self.root,
+            minvalue=1,
+            maxvalue=total_pages,
+            initialvalue=self.current_page + 1
+        )
+        if page_num is not None:
+            self.current_page = page_num - 1
             self.update_display()
 
     def zoom_in(self):
